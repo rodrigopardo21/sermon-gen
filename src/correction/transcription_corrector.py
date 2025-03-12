@@ -25,10 +25,15 @@ def leer_transcripcion(ruta_archivo):
 def corregir_con_gpt(cliente, transcripcion, modelo):
     """Envía la transcripción a GPT-4 para corrección."""
     prompt = """
-    Por favor, corrige la siguiente transcripción de un sermón. 
-    Mejora la ortografía, gramática, puntuación y legibilidad general.
-    Mantén el contenido y el significado original pero mejora la estructura de las oraciones si es necesario.
-    No agregues ni elimines información sustancial.
+    Por favor, corrige ÚNICAMENTE errores de ortografía, gramática y puntuación en la siguiente transcripción de un sermón.
+    
+    INSTRUCCIONES IMPORTANTES:
+    1. NO resumas ni condensas el texto bajo ninguna circunstancia.
+    2. Mantén EXACTAMENTE la misma cantidad de información y contenido.
+    3. Conserva todos los párrafos, ideas y detalles del original.
+    4. No modifiques la estructura de las oraciones a menos que sea absolutamente necesario para la claridad.
+    5. Tu tarea es solo corregir errores gramaticales, ortográficos y de puntuación, no reescribir ni reformular.
+    6. El resultado debe ser tan extenso como el original, con cada idea y concepto preservado.
     
     Transcripción:
     
@@ -38,10 +43,10 @@ def corregir_con_gpt(cliente, transcripcion, modelo):
         respuesta = cliente.chat.completions.create(
             model=modelo,
             messages=[
-                {"role": "system", "content": "Eres un asistente especializado en corregir y mejorar transcripciones de sermones, manteniendo su contenido esencial intacto."},
+                {"role": "system", "content": "Eres un corrector de textos cuya única función es corregir errores de ortografía, gramática y puntuación, sin alterar, resumir o modificar el contenido original en absoluto."},
                 {"role": "user", "content": prompt + transcripcion}
             ],
-            temperature=0.3
+            temperature=0.1
         )
         return respuesta.choices[0].message.content
     except Exception as e:
