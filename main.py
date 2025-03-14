@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from src.transcription.transcriber import SermonTranscriber
-from src.correction.transcription_corrector import leer_transcripcion, corregir_con_gpt, guardar_transcripcion_corregida
+from src.correction.transcription_corrector import leer_transcripcion, corregir_con_gpt, guardar_transcripcion_corregida, corregir_transcripcion_por_segmentos
 from openai import OpenAI
 
 # Cargamos las variables de entorno para manejar información sensible de manera segura
@@ -90,33 +90,27 @@ def main():
                         base_name = os.path.basename(transcription_path)
                         corrected_file = os.path.join(corrected_dir, f"{Path(base_name).stem}_corregido.txt")
                         
-                        print(f"Enviando a GPT-4 para corrección automática...")
+                        print(f"Enviando a GPT-4 para corrección automática por segmentos...")
+                        modelo_gpt = "gpt-4-turbo"  # Puedes cambiar esto a otro modelo si prefieres
                         
-                        # Leemos la transcripción
-                        transcripcion_texto = leer_transcripcion(transcription_path)
-                        if transcripcion_texto:
-                            # Corregimos con GPT-4
-                            modelo_gpt = "gpt-4-turbo"  # Puedes cambiar esto a otro modelo si prefieres
-                            transcripcion_corregida = corregir_con_gpt(cliente_openai, transcripcion_texto, modelo_gpt)
-                            
-                            if transcripcion_corregida:
-                                # Guardamos la transcripción corregida
-                                if guardar_transcripcion_corregida(transcripcion_corregida, corrected_file):
-                                    print(f"Transcripción corregida guardada en: {corrected_file}")
-                                
-                                    # Estadísticas de corrección
-                                    caracteres_original = len(transcripcion_texto)
-                                    caracteres_corregido = len(transcripcion_corregida)
-                                    print(f"\nEstadísticas de corrección:")
-                                    print(f"- Caracteres originales: {caracteres_original}")
-                                    print(f"- Caracteres corregidos: {caracteres_corregido}")
-                                    print(f"- Diferencia: {caracteres_corregido - caracteres_original} caracteres")
-                                else:
-                                    print("Error al guardar la transcripción corregida.")
-                            else:
-                                print("Error durante la corrección con GPT-4.")
+                        # Definimos un tamaño de segmento más pequeño para evitar truncamiento
+                        tamano_segmento = 700  # Esto es crucial para asegurar que GPT-4 procese todo el contenido
+                        
+                        exito, caracteres_original, caracteres_corregido = corregir_transcripcion_por_segmentos(
+                            cliente_openai, 
+                            transcription_path, 
+                            corrected_file, 
+                            modelo_gpt, 
+                            tamano_segmento=tamano_segmento  # Explícitamente pasamos el tamaño de segmento
+                        )
+
+                        if exito:
+                            print(f"\nEstadísticas de corrección:")
+                            print(f"- Caracteres originales: {caracteres_original}")
+                            print(f"- Caracteres corregidos: {caracteres_corregido}")
+                            print(f"- Diferencia: {caracteres_corregido - caracteres_original} caracteres")
                         else:
-                            print(f"Error al leer el archivo de transcripción: {transcription_path}")
+                            print("Error durante la corrección con GPT-4.")
                     else:
                         print(f"No se pudo encontrar el archivo de transcripción: {transcription_path}")
                 else:
