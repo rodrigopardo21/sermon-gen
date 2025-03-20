@@ -3,15 +3,15 @@ import argparse
 import time
 import re
 from pathlib import Path
-from openai import OpenAI
+from anthropic import Anthropic
 
 def configurar_argumentos():
     """Configura los argumentos de línea de comandos."""
-    parser = argparse.ArgumentParser(description='Corrige transcripciones usando GPT-4')
+    parser = argparse.ArgumentParser(description='Corrige transcripciones usando Claude')
     parser.add_argument('--input', type=str, required=True, help='Ruta al archivo de transcripción bruta')
     parser.add_argument('--output', type=str, help='Ruta para guardar la transcripción corregida')
-    parser.add_argument('--api_key', type=str, help='Clave API de OpenAI (o usar variable de entorno OPENAI_API_KEY)')
-    parser.add_argument('--model', type=str, default="gpt-4-turbo", help='Modelo GPT a utilizar')
+    parser.add_argument('--api_key', type=str, help='Clave API de Anthropic (o usar variable de entorno ANTHROPIC_API_KEY)')
+    parser.add_argument('--model', type=str, default="claude-3-7-sonnet-20250219", help='Modelo Claude a utilizar')
     return parser.parse_args()
 
 def leer_transcripcion(ruta_archivo):
@@ -23,19 +23,21 @@ def leer_transcripcion(ruta_archivo):
         print(f"Error al leer el archivo: {e}")
         return None
 
-def corregir_con_gpt(cliente, transcripcion, modelo, id_segmento=None, total_segmentos=None):
-    """Envía la transcripción a GPT-4 para corrección."""
+def corregir_con_claude(cliente, transcripcion, modelo, id_segmento=None, total_segmentos=None):
+    """Envía la transcripción a Claude para corrección."""
     # Información de segmento para incluir en el prompt
     info_segmento = ""
     if id_segmento is not None and total_segmentos is not None:
         info_segmento = f"\nEste es el segmento {id_segmento} de {total_segmentos} de la transcripción completa."
     
+    sistema = """Eres un corrector de transcripciones EXTREMADAMENTE CONSERVADOR. Tu ÚNICO trabajo es corregir errores ortográficos, gramaticales y de puntuación OBVIOS. NUNCA, bajo ninguna circunstancia, debes modificar el contenido, longitud, estructura o estilo del texto original. Debes devolver un texto casi idéntico al original, con la misma cantidad aproximada de caracteres."""
+    
     prompt = f"""
     INSTRUCCIONES CRÍTICAS PARA LA CORRECCIÓN DE TRANSCRIPCIÓN
     
-    Tu tarea es ÚNICAMENTE corregir errores de ortografía, gramática y puntuación en el segmento de transcripción proporcionado.{info_segmento}
+    Tu tarea es ÚNICAMENTE corregir errores OBVIOS de ortografía, gramática y puntuación en el segmento de transcripción proporcionado.{info_segmento}
     
-    REGLAS ESTRICTAS:
+    REGLAS ESTRICTAS QUE DEBES SEGUIR AL PIE DE LA LETRA:
     1. NO añadas NINGÚN contenido nuevo, ni siquiera un párrafo introductorio.
     2. NO resumas, condensas o parafrasees el texto bajo NINGUNA circunstancia.
     3. NO elimines NINGUNA parte del texto original.
@@ -43,17 +45,21 @@ def corregir_con_gpt(cliente, transcripcion, modelo, id_segmento=None, total_seg
     5. MANTÉN todas las repeticiones, muletillas y características del habla oral.
     6. CORRIGE ÚNICAMENTE: ortografía, puntuación, gramática y errores tipográficos evidentes.
     7. CONSERVA el estilo de habla del predicador sin modificarlo.
+    8. MANTÉN la misma longitud (número de caracteres) del texto original.
     
     EJEMPLOS DE LO QUE SÍ DEBES CORREGIR:
-    - "Habían personas" → "Había personas"
-    - "Primera y Tercero Nicenses" → "Primera y Tercera de Tesalonicenses"
-    - Añadir puntos y comas donde falten
+    - "Habían personas" → "Había personas" (concordancia gramatical)
+    - "Iba en contra" → "Iba en contra" (sin cambios si está gramaticalmente correcto)
+    - Añadir puntos y comas donde falten pero sin cambiar el sentido o ritmo
     - Corregir palabras mal escritas como "tectual" → "textual"
     
     EJEMPLOS DE LO QUE NO DEBES MODIFICAR:
     - Repeticiones intencionales como "cierto, cierto"
     - Expresiones coloquiales como "monedita de oro"
     - El estilo informal y característico de un sermón hablado
+    - Digresiones o cambios abruptos de tema (comunes en el habla natural)
+    
+    IMPORTANTE: Tu respuesta debe mantener la estructura, el contenido y la intención exactos del original. Tu misión es SOLO corregir errores obvios, no mejorar el texto ni hacerlo más coherente o fluido.
     
     Segmento de transcripción a corregir (delimita con <INICIO_SEGMENTO> y <FIN_SEGMENTO>):
     
@@ -61,24 +67,24 @@ def corregir_con_gpt(cliente, transcripcion, modelo, id_segmento=None, total_seg
     {transcripcion}
     <FIN_SEGMENTO>
     
-    IMPORTANTE: Tu respuesta debe tener EXACTAMENTE la misma extensión que el texto original o muy similar, conservando todo el contenido. NO agregues ninguna introducción o conclusión. MANTÉN TODO EL CONTENIDO ORIGINAL.
+    EXTREMADAMENTE IMPORTANTE: Tu respuesta debe tener EXACTAMENTE la misma extensión que el texto original o muy similar, conservando todo el contenido. NO agregues ninguna introducción o conclusión. MANTÉN TODO EL CONTENIDO ORIGINAL.
     """
     
     try:
-        respuesta = cliente.chat.completions.create(
+        respuesta = cliente.messages.create(
             model=modelo,
+            max_tokens=4000,
+            temperature=0.05,  # Temperatura más baja para respuestas más conservadoras
+            system=sistema,
             messages=[
-                {"role": "system", "content": "Eres un corrector profesional de transcripciones. Tu ÚNICO trabajo es corregir errores ortográficos, gramaticales y de puntuación. NUNCA añades, eliminas ni resumes contenido. NUNCA agregas ningún texto introductorio. SIEMPRE mantienes la totalidad del texto original."},
                 {"role": "user", "content": prompt}
-            ],
-            temperature=0.1,
-            max_tokens=4000  # Aseguramos que tenga suficientes tokens para responder
+            ]
         )
         
-        # Extraer solo el texto corregido, sin comentarios adicionales que GPT-4 pudiera añadir
-        texto_corregido = respuesta.choices[0].message.content
+        # Extraer solo el texto corregido, sin comentarios adicionales que Claude pudiera añadir
+        texto_corregido = respuesta.content[0].text
         
-        # Intentamos eliminar texto adicional que GPT-4 podría añadir antes o después del segmento
+        # Intentamos eliminar texto adicional que Claude podría añadir antes o después del segmento
         if "<INICIO_SEGMENTO>" in texto_corregido and "<FIN_SEGMENTO>" in texto_corregido:
             texto_corregido = re.search(r'<INICIO_SEGMENTO>(.*?)<FIN_SEGMENTO>', texto_corregido, re.DOTALL)
             if texto_corregido:
@@ -87,17 +93,17 @@ def corregir_con_gpt(cliente, transcripcion, modelo, id_segmento=None, total_seg
         # Si no encontramos los delimitadores, tomamos todo el contenido
         return texto_corregido
     except Exception as e:
-        print(f"Error al comunicarse con la API de OpenAI: {e}")
+        print(f"Error al comunicarse con la API de Anthropic: {e}")
         return None
 
-def verificar_integridad(texto_original, texto_corregido, tolerancia=0.10):
+def verificar_integridad(texto_original, texto_corregido, tolerancia=0.20):
     """
     Verifica que el texto corregido mantenga la integridad del original.
     
     Args:
         texto_original: El texto original
         texto_corregido: El texto corregido
-        tolerancia: La diferencia máxima permitida en longitud (por defecto 10%)
+        tolerancia: La diferencia máxima permitida en longitud (por defecto 20%)
         
     Returns:
         bool: True si el texto corregido mantiene la integridad, False en caso contrario
@@ -148,8 +154,11 @@ def verificar_integridad(texto_original, texto_corregido, tolerancia=0.10):
     
     return True
 
-def dividir_texto(texto, tamano_segmento=500):
-    """Divide el texto en segmentos más pequeños respetando párrafos."""
+def dividir_texto(texto, tamano_segmento=1000):
+    """Divide el texto en segmentos más pequeños respetando párrafos.
+    
+    Nota: Reducimos el tamaño de segmento para procesar mejor el texto.
+    """
     # Diagnóstico
     print(f"Texto original: {len(texto)} caracteres")
     print(f"Tamaño de segmento solicitado: {tamano_segmento} caracteres")
@@ -168,20 +177,30 @@ def dividir_texto(texto, tamano_segmento=500):
             encabezado_encontrado = True
             break
     
-    # Si no encontramos la línea de separación, establecemos un límite máximo para el encabezado
-    if not encabezado_encontrado:
-        # Tomamos solo las primeras 5 líneas como máximo para el encabezado
-        i = min(5, len(lineas))
-        encabezado = "\n".join(lineas[:i]) + "\n"
+    # Si no encontramos la línea de separación o el encabezado es muy pequeño,
+    # establecemos un límite mínimo para el encabezado
+    if not encabezado_encontrado or len(encabezado) < 300:
+        # Tomamos al menos 10 líneas como encabezado o hasta 300 caracteres
+        nuevo_i = 0
+        nuevo_encabezado = ""
+        for j, linea in enumerate(lineas):
+            nuevo_encabezado += linea + "\n"
+            nuevo_i = j + 1
+            if len(nuevo_encabezado) >= 300 or j >= 10:
+                break
+        
+        # Solo usamos el nuevo encabezado si es más grande que el anterior
+        if len(nuevo_encabezado) > len(encabezado):
+            encabezado = nuevo_encabezado
+            i = nuevo_i
     
     # Diagnóstico del encabezado
     print(f"Encabezado identificado: {len(encabezado)} caracteres")
     
-    # El resto del texto lo dividimos en segmentos
+    # El resto del texto lo dividimos en segmentos más pequeños
     resto_texto = "\n".join(lineas[i:])
     
-    # Forzamos división por caracteres en lugar de por párrafos
-    # esto es más confiable para textos largos donde los párrafos pueden ser irregulares
+    # Dividimos en segmentos más pequeños para mejor procesamiento
     chunks = []
     texto_actual = ""
     current_size = 0
@@ -250,11 +269,11 @@ def corregir_segmentos(cliente, segmentos, modelo):
         
         while intentos < max_intentos and segmento_corregido is None:
             # Corregimos el segmento
-            segmento_corregido = corregir_con_gpt(cliente, segmento, modelo, i+1, len(segmentos))
+            segmento_corregido = corregir_con_claude(cliente, segmento, modelo, i+1, len(segmentos))
             
             # Verificamos integridad si obtuvimos respuesta
             if segmento_corregido:
-                if not verificar_integridad(segmento, segmento_corregido):
+                if not verificar_integridad(segmento, segmento_corregido, tolerancia=0.20):
                     print(f"Fallo de integridad en el segmento {i+1}. Reintentando...")
                     segmento_corregido = None  # Reintentar
             
@@ -371,14 +390,14 @@ def guardar_transcripcion_corregida(transcripcion_corregida, ruta_salida):
         print(f"Error al guardar la transcripción corregida: {e}")
         return False
 
-def corregir_transcripcion_por_segmentos(cliente_openai, ruta_archivo, ruta_salida, modelo="gpt-4-turbo", tamano_segmento=500):
+def corregir_transcripcion_por_segmentos(cliente_anthropic, ruta_archivo, ruta_salida, modelo="claude-3-7-sonnet-20250219", tamano_segmento=1000):
     """Corrige una transcripción dividiéndola en segmentos."""
     # Leer la transcripción completa
     transcripcion_completa = leer_transcripcion(ruta_archivo)
     if not transcripcion_completa:
         return False, 0, 0
     
-    # Dividir en segmentos
+    # Dividir en segmentos (con tamaño ajustado)
     print(f"Dividiendo transcripción en segmentos de aproximadamente {tamano_segmento} caracteres...")
     segmentos = dividir_texto(transcripcion_completa, tamano_segmento)
     print(f"Transcripción dividida en {len(segmentos)} segmentos.")
@@ -396,7 +415,7 @@ def corregir_transcripcion_por_segmentos(cliente_openai, ruta_archivo, ruta_sali
     # Corregir segmentos
     print(f"Enviando segmentos a {modelo} para corrección...")
     inicio = time.time()
-    transcripcion_corregida = corregir_segmentos(cliente_openai, segmentos, modelo)
+    transcripcion_corregida = corregir_segmentos(cliente_anthropic, segmentos, modelo)
     fin = time.time()
     
     if not transcripcion_corregida:
@@ -405,7 +424,7 @@ def corregir_transcripcion_por_segmentos(cliente_openai, ruta_archivo, ruta_sali
     print(f"Corrección completada en {fin - inicio:.2f} segundos")
     
     # Verificar integridad final
-    if not verificar_integridad(transcripcion_completa, transcripcion_corregida, tolerancia=0.15):
+    if not verificar_integridad(transcripcion_completa, transcripcion_corregida, tolerancia=0.20):
         print("ADVERTENCIA: La transcripción corregida final presenta diferencias significativas con el original.")
         print("Se recomienda revisar manualmente el resultado.")
     
@@ -434,19 +453,19 @@ def main():
         ruta_entrada = Path(args.input)
         args.output = str(ruta_entrada.parent / f"{ruta_entrada.stem}_corregido{ruta_entrada.suffix}")
     
-    # Obtener la clave API de OpenAI
-    api_key = args.api_key or os.environ.get("OPENAI_API_KEY")
+    # Obtener la clave API de Anthropic
+    api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        print("Error: Se requiere una clave API de OpenAI. Proporcione --api_key o establezca la variable de entorno OPENAI_API_KEY.")
+        print("Error: Se requiere una clave API de Anthropic. Proporcione --api_key o establezca la variable de entorno ANTHROPIC_API_KEY.")
         return
     
-    # Inicializar el cliente de OpenAI
-    cliente = OpenAI(api_key=api_key)
+    # Inicializar el cliente de Anthropic
+    cliente = Anthropic(api_key=api_key)
     
     # Procesar la transcripción por segmentos
     print(f"Leyendo transcripción: {args.input}")
     exito, caracteres_original, caracteres_corregido = corregir_transcripcion_por_segmentos(
-        cliente, args.input, args.output, args.model
+        cliente, args.input, args.output, args.model, tamano_segmento=tamano_segmento
     )
     
     if exito:

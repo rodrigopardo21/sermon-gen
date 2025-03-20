@@ -4,3 +4,5 @@ __pycache__/
 venv/
 .env
 .DS_Store
+output_transcriptions/corrected/*.txt
+output_transcriptions/*.json

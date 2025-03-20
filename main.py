@@ -10,8 +10,10 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from src.transcription.transcriber import SermonTranscriber
-from src.correction.transcription_corrector import leer_transcripcion, corregir_con_gpt, guardar_transcripcion_corregida, corregir_transcripcion_por_segmentos
-from openai import OpenAI
+from src.correction.transcription_corrector import leer_transcripcion, corregir_con_claude, guardar_transcripcion_corregida, corregir_transcripcion_por_segmentos
+# Importamos el nuevo módulo de corrección línea por línea
+from src.correction.transcription_line_corrector import corregir_transcripcion_completa
+from anthropic import Anthropic
 
 # Cargamos las variables de entorno para manejar información sensible de manera segura
 load_dotenv()
@@ -33,20 +35,27 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(corrected_dir, exist_ok=True)
 
+    # Determinar qué método de corrección usar (por segmentos o línea por línea)
+    metodo_correccion = "linea_por_linea"  # Opciones: "segmentos" o "linea_por_linea"
+
     try:
         # Obtenemos la clave de API de las variables de entorno
-        api_key = os.getenv('OPENAI_API_KEY')
+        api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
-            raise ValueError("No se encontró la clave de API de OpenAI. Por favor, configura OPENAI_API_KEY en el archivo .env")
+            raise ValueError("No se encontró la clave de API de Anthropic. Por favor, configura ANTHROPIC_API_KEY en el archivo .env")
 
-        # Inicializamos el cliente de OpenAI para la corrección
-        cliente_openai = OpenAI(api_key=api_key)
+        # Inicializamos el cliente de Anthropic para la corrección
+        cliente_anthropic = Anthropic(api_key=api_key)
 
-        # Inicializamos nuestro transcriptor
+        # Inicializamos nuestro transcriptor (mantenemos OpenAI para Whisper)
+        whisper_api_key = os.getenv('OPENAI_API_KEY')
+        if not whisper_api_key:
+            print("ADVERTENCIA: No se encontró la clave de API de OpenAI para Whisper. Algunas funciones podrían no estar disponibles.")
+        
         transcriber = SermonTranscriber(
             input_dir=input_dir,
             output_dir=output_dir,
-            api_key=api_key
+            api_key=whisper_api_key
         )
 
         # Lista de videos a procesar
@@ -75,6 +84,9 @@ def main():
                         video_name_base = Path(video_name).stem
                         transcript_txt = os.path.join(output_dir, f"{video_name_base}_transcript.txt")
                         
+                        # Guardamos también la ruta al archivo JSON para el nuevo método
+                        transcript_json = os.path.join(output_dir, f"{video_name_base}_transcription.json")
+                        
                         if os.path.exists(transcript_txt):
                             transcription_path = transcript_txt
                             print(f"Usando archivo de transcripción existente: {transcription_path}")
@@ -84,33 +96,57 @@ def main():
                             print(f"Intentando usar ruta generada: {transcription_path}")
                     else:
                         transcription_path = transcription_file
+                        # No tenemos JSON en este caso
+                        transcript_json = None
                     
                     if os.path.exists(transcription_path):
                         # Definimos la ruta para la transcripción corregida
                         base_name = os.path.basename(transcription_path)
-                        corrected_file = os.path.join(corrected_dir, f"{Path(base_name).stem}_corregido.txt")
                         
-                        print(f"Enviando a GPT-4 para corrección automática por segmentos...")
-                        modelo_gpt = "gpt-4-turbo"  # Puedes cambiar esto a otro modelo si prefieres
-                        
-                        # Definimos un tamaño de segmento más pequeño para evitar truncamiento
-                        tamano_segmento = 700  # Esto es crucial para asegurar que GPT-4 procese todo el contenido
-                        
-                        exito, caracteres_original, caracteres_corregido = corregir_transcripcion_por_segmentos(
-                            cliente_openai, 
-                            transcription_path, 
-                            corrected_file, 
-                            modelo_gpt, 
-                            tamano_segmento=tamano_segmento  # Explícitamente pasamos el tamaño de segmento
-                        )
+                        # Creamos rutas de salida diferentes según el método
+                        if metodo_correccion == "segmentos":
+                            corrected_file = os.path.join(corrected_dir, f"{Path(base_name).stem}_corregido_segmentos.txt")
+                            print(f"Enviando a Claude para corrección automática por segmentos...")
+                            modelo_claude = "claude-3-7-sonnet-20250219"
+                            
+                            # Definimos un tamaño de segmento
+                            tamano_segmento = 1500
+                            
+                            exito, caracteres_original, caracteres_corregido = corregir_transcripcion_por_segmentos(
+                                cliente_anthropic, 
+                                transcription_path, 
+                                corrected_file, 
+                                modelo_claude, 
+                                tamano_segmento=tamano_segmento
+                            )
+                        else:  # "linea_por_linea"
+                            corrected_file = os.path.join(corrected_dir, f"{Path(base_name).stem}_corregido_lineas.txt")
+                            print(f"Enviando a Claude para corrección línea por línea...")
+                            modelo_claude = "claude-3-7-sonnet-20250219"
+                            
+                            # Usamos el nuevo método de corrección
+                            exito, texto_corregido = corregir_transcripcion_completa(
+                                cliente_anthropic,
+                                transcription_path,
+                                transcript_json if os.path.exists(transcript_json or "") else None,
+                                corrected_file,
+                                modelo_claude
+                            )
+                            
+                            # Calculamos estadísticas para mantener consistencia
+                            if exito:
+                                texto_original = leer_transcripcion(transcription_path)
+                                caracteres_original = len(texto_original)
+                                caracteres_corregido = len(texto_corregido)
 
                         if exito:
                             print(f"\nEstadísticas de corrección:")
                             print(f"- Caracteres originales: {caracteres_original}")
                             print(f"- Caracteres corregidos: {caracteres_corregido}")
                             print(f"- Diferencia: {caracteres_corregido - caracteres_original} caracteres")
+                            print(f"- Porcentaje de cambio: {((caracteres_corregido - caracteres_original) / caracteres_original) * 100:.2f}%")
                         else:
-                            print("Error durante la corrección con GPT-4.")
+                            print("Error durante la corrección con Claude.")
                     else:
                         print(f"No se pudo encontrar el archivo de transcripción: {transcription_path}")
                 else:
@@ -139,6 +175,7 @@ def main():
                 continue
 
         print("\nAhora puedes revisar las transcripciones corregidas en la carpeta output_transcriptions/corrected.")
+        print(f"Las transcripciones corregidas tienen '_corregido_{metodo_correccion}' en el nombre del archivo.")
         print("Una vez revisadas, puedes continuar con la generación de contenido multimedia.")
 
         print("\n¡Proceso completado!")
