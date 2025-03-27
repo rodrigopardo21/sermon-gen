@@ -1,10 +1,18 @@
+# Archivos de video
 *.mp4
+
+# Archivos Python compilados
 *.pyc
-__pycache__/
+**pycache**/
+
+# Entorno virtual
 venv/
+
+# Archivos de configuración y secretos
 .env
+
+# Archivos del sistema
 .DS_Store
-output_transcriptions/corrected/*.txt
-output_transcriptions/*.json
-output_transcriptions/*.txt
-output_transcriptions/*.json
+
+# Archivos de salida generados
+output_transcriptions/
