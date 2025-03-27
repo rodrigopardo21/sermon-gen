@@ -6,3 +6,5 @@ venv/
 .DS_Store
 output_transcriptions/corrected/*.txt
 output_transcriptions/*.json
+output_transcriptions/*.txt
+output_transcriptions/*.json
