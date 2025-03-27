@@ -1,18 +1,16 @@
-# Archivos de video
-*.mp4
 
-# Archivos Python compilados
+*.mp4
 *.pyc
 **pycache**/
-
-# Entorno virtual
 venv/
-
-# Archivos de configuración y secretos
 .env
-
-# Archivos del sistema
 .DS_Store
-
-# Archivos de salida generados
 output_transcriptions/
+stock_videos/**/*.mp4
+stock_videos/**/*.mov
+stock_videos/**/*.avi
+sermones/**/*.mp4
+sermones/**/*.mp3
+sermones/**/*.wav
+
+!*/*/
