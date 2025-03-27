@@ -17,6 +17,8 @@ from src.correction.transcription_line_corrector import corregir_transcripcion_c
 from src.content_gen.key_ideas_extractor import extraer_y_guardar_ideas_clave
 # Importamos el editor de ideas clave
 from src.content_gen.editor_ideas_clave import convertir_json_a_txt
+# Importamos el generador de videos
+from src.content_gen.video_generator import VideoGenerator
 from anthropic import Anthropic
 
 # Cargamos las variables de entorno para manejar información sensible de manera segura
@@ -33,11 +35,13 @@ def main():
     input_dir = os.path.join(base_dir, 'input_videos')
     output_dir = os.path.join(base_dir, 'output_transcriptions')
     corrected_dir = os.path.join(output_dir, 'corrected')
+    videos_dir = os.path.join(base_dir, 'output_videos')
 
     # Creamos los directorios si no existen
     os.makedirs(input_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(corrected_dir, exist_ok=True)
+    os.makedirs(videos_dir, exist_ok=True)
 
     # Determinar qué método de corrección usar (por segmentos o línea por línea)
     metodo_correccion = "linea_por_linea"  # Opciones: "segmentos" o "linea_por_linea"
@@ -166,6 +170,38 @@ def main():
                                 if ruta_txt:
                                     print(f"Se ha creado un archivo de texto editable en: {ruta_txt}")
                                     print("Puedes abrir este archivo, editar las ideas y luego convertirlo de vuelta a JSON.")
+                                    
+                                    # Preguntar si el usuario quiere generar videos ahora o esperar edición
+                                    generar_videos_ahora = input("¿Quieres generar videos ahora con las ideas extraídas? (s/n): ")
+                                    
+                                    if generar_videos_ahora.lower() == 's':
+                                        # Obtener la ruta del audio original
+                                        # Asumiendo que el audio se encuentra en output_transcriptions/sermon_name_audio.wav
+                                        nombre_base = os.path.splitext(os.path.basename(video_filename))[0]
+                                        audio_path = os.path.join(output_dir, f"{nombre_base}_audio.wav")
+                                        
+                                        if os.path.exists(audio_path):
+                                            print("\nGenerando videos a partir de las ideas clave...")
+                                            
+                                            # Inicializar el generador de videos
+                                            video_generator = VideoGenerator(output_dir=videos_dir)
+                                            
+                                            # Generar videos cortos para redes sociales
+                                            print("Generando videos cortos para redes sociales...")
+                                            videos_generados = video_generator.create_short_form_video(ruta_ideas, audio_path)
+                                            
+                                            if videos_generados:
+                                                print(f"\nSe han generado {len(videos_generados)} videos cortos:")
+                                                for video in videos_generados:
+                                                    print(f"- {video}")
+                                            else:
+                                                print("No se pudieron generar los videos cortos.")
+                                        else:
+                                            print(f"No se encontró el archivo de audio: {audio_path}")
+                                            print("Asegúrate de que el archivo de audio existe antes de generar videos.")
+                                    else:
+                                        print("\nPuedes generar videos más tarde con el comando:")
+                                        print(f"python src/content_gen/video_generator.py --ideas {ruta_ideas} --audio [RUTA_AUDIO] --shorts")
                             else:
                                 print("No se pudieron extraer las ideas clave. Continuando con el resto del proceso.")
                         else:
@@ -201,11 +237,13 @@ def main():
         print(f"Las transcripciones corregidas tienen '_corregido_{metodo_correccion}' en el nombre del archivo.")
         print("Las ideas clave extraídas se guardan como '_ideas_clave.json' en la misma carpeta.")
         print("Para cada archivo JSON de ideas clave, se genera un archivo TXT editable.")
+        print("Los videos generados se encuentran en la carpeta output_videos.")
         print("Una vez revisadas, puedes continuar con la generación de contenido multimedia.")
 
         print("\n¡Proceso completado!")
         print(f"Las transcripciones originales se han guardado en: {output_dir}")
         print(f"Las transcripciones corregidas se han guardado en: {corrected_dir}")
+        print(f"Los videos generados se han guardado en: {videos_dir}")
 
     except Exception as e:
         print(f"Error en la ejecución del programa: {str(e)}")
