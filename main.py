@@ -13,6 +13,10 @@ from src.transcription.transcriber import SermonTranscriber
 from src.correction.transcription_corrector import leer_transcripcion, corregir_con_claude, guardar_transcripcion_corregida, corregir_transcripcion_por_segmentos
 # Importamos el nuevo módulo de corrección línea por línea
 from src.correction.transcription_line_corrector import corregir_transcripcion_completa
+# Importamos el nuevo módulo de extracción de ideas clave
+from src.content_gen.key_ideas_extractor import extraer_y_guardar_ideas_clave
+# Importamos el editor de ideas clave
+from src.content_gen.editor_ideas_clave import convertir_json_a_txt
 from anthropic import Anthropic
 
 # Cargamos las variables de entorno para manejar información sensible de manera segura
@@ -145,6 +149,25 @@ def main():
                             print(f"- Caracteres corregidos: {caracteres_corregido}")
                             print(f"- Diferencia: {caracteres_corregido - caracteres_original} caracteres")
                             print(f"- Porcentaje de cambio: {((caracteres_corregido - caracteres_original) / caracteres_original) * 100:.2f}%")
+                            
+                            # Después de la corrección, extraemos las ideas clave
+                            print("\nExtrayendo ideas clave para generación de videos...")
+                            exito_ideas, ruta_ideas = extraer_y_guardar_ideas_clave(
+                                cliente_anthropic,
+                                corrected_file,
+                                modelo_claude
+                            )
+                            
+                            if exito_ideas:
+                                print(f"Ideas clave extraídas y guardadas en: {ruta_ideas}")
+                                
+                                # Convertir a formato TXT para edición
+                                ruta_txt = convertir_json_a_txt(ruta_ideas)
+                                if ruta_txt:
+                                    print(f"Se ha creado un archivo de texto editable en: {ruta_txt}")
+                                    print("Puedes abrir este archivo, editar las ideas y luego convertirlo de vuelta a JSON.")
+                            else:
+                                print("No se pudieron extraer las ideas clave. Continuando con el resto del proceso.")
                         else:
                             print("Error durante la corrección con Claude.")
                     else:
@@ -176,6 +199,8 @@ def main():
 
         print("\nAhora puedes revisar las transcripciones corregidas en la carpeta output_transcriptions/corrected.")
         print(f"Las transcripciones corregidas tienen '_corregido_{metodo_correccion}' en el nombre del archivo.")
+        print("Las ideas clave extraídas se guardan como '_ideas_clave.json' en la misma carpeta.")
+        print("Para cada archivo JSON de ideas clave, se genera un archivo TXT editable.")
         print("Una vez revisadas, puedes continuar con la generación de contenido multimedia.")
 
         print("\n¡Proceso completado!")
