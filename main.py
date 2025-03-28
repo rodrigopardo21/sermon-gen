@@ -16,7 +16,9 @@ from src.correction.transcription_line_corrector import corregir_transcripcion_c
 # Importamos el nuevo módulo de extracción de ideas clave
 from src.content_gen.key_ideas_extractor import extraer_y_guardar_ideas_clave
 # Importamos el editor de ideas clave
-from src.content_gen.editor_ideas_clave import convertir_json_a_txt
+from src.content_gen.editor_ideas_clave import convertir_json_a_txt, convertir_txt_a_json
+# Importamos el generador de videos con imágenes estáticas
+from src.content_gen.static_image_generator import StaticImageGenerator
 from anthropic import Anthropic
 
 # Cargamos las variables de entorno para manejar información sensible de manera segura
@@ -166,6 +168,79 @@ def main():
                                 if ruta_txt:
                                     print(f"Se ha creado un archivo de texto editable en: {ruta_txt}")
                                     print("Puedes abrir este archivo, editar las ideas y luego convertirlo de vuelta a JSON.")
+                                    
+                                    # Preguntar si el usuario quiere editar las ideas clave
+                                    editar_ideas = input("\n¿Quieres editar las ideas clave ahora? (s/n): ")
+                                    
+                                    if editar_ideas.lower() == 's':
+                                        print(f"Por favor, edita el archivo: {ruta_txt}")
+                                        print("Presiona Enter cuando hayas terminado...")
+                                        input()
+                                        
+                                        # Convertir de vuelta a JSON
+                                        ruta_ideas_editado = os.path.join(os.path.dirname(ruta_ideas), f"{Path(os.path.basename(ruta_ideas)).stem}_editado.json")
+                                        convertir_txt_a_json(ruta_txt, ruta_ideas_editado)
+                                        ruta_ideas = ruta_ideas_editado
+                                        print(f"Ideas editadas guardadas en: {ruta_ideas}")
+                                    
+                                    # Preguntar si el usuario quiere generar videos con imágenes estáticas
+                                    generar_videos = input("\n¿Quieres generar videos con imágenes estáticas para estas ideas? (s/n): ")
+                                    
+                                    if generar_videos.lower() == 's':
+                                        # Obtener la ruta del audio
+                                        audio_path = os.path.join(transcriber.output_dir, f"{video_name_base}_audio.wav")
+                                        
+                                        if os.path.exists(audio_path):
+                                            print("\nGenerando videos con imágenes estáticas para las ideas clave...")
+                                            
+                                            # Inicializar el generador de videos con imágenes estáticas
+                                            imagen_generator = StaticImageGenerator(base_dir=base_dir)
+                                            
+                                            # Crear directorio para videos cortos si no existe
+                                            shorts_dir = os.path.join(base_dir, 'output_videos', 'shorts')
+                                            os.makedirs(shorts_dir, exist_ok=True)
+                                            
+                                            # Generar videos cortos para cada idea clave
+                                            videos_generados = imagen_generator.generar_videos_ideas(
+                                                ruta_ideas,
+                                                audio_path,
+                                                shorts_dir
+                                            )
+                                            
+                                            if videos_generados:
+                                                print(f"\nSe han generado {len(videos_generados)} videos cortos:")
+                                                for video in videos_generados:
+                                                    print(f"- {video}")
+                                            else:
+                                                print("No se pudieron generar los videos cortos.")
+                                            
+                                            # Preguntar si quiere generar el video completo con subtítulos
+                                            generar_completo = input("\n¿Quieres generar el video completo con subtítulos? (s/n): ")
+                                            
+                                            if generar_completo.lower() == 's':
+                                                # Verificar que existe el video original
+                                                video_path = os.path.join(input_dir, video_filename)
+                                                if os.path.exists(video_path):
+                                                    # Crear directorio para videos largos si no existe
+                                                    long_dir = os.path.join(base_dir, 'output_videos', 'long')
+                                                    os.makedirs(long_dir, exist_ok=True)
+                                                    
+                                                    output_video = os.path.join(long_dir, f"{video_name_base}_completo_subtitulos.mp4")
+                                                    
+                                                    print("\nGenerando video completo con subtítulos...")
+                                                    imagen_generator.generar_video_completo_subtitulos(
+                                                        video_path,
+                                                        corrected_file,
+                                                        output_video
+                                                    )
+                                                else:
+                                                    print(f"No se encontró el video original: {video_path}")
+                                        else:
+                                            print(f"No se encontró el archivo de audio: {audio_path}")
+                                            print("Asegúrate de que el archivo de audio existe antes de generar videos.")
+                                    else:
+                                        print("\nPuedes generar videos más tarde utilizando:")
+                                        print(f"python src/content_gen/static_image_generator.py generar_videos --ideas {ruta_ideas} --audio [RUTA_AUDIO]")
                             else:
                                 print("No se pudieron extraer las ideas clave. Continuando con el resto del proceso.")
                         else:
@@ -201,11 +276,13 @@ def main():
         print(f"Las transcripciones corregidas tienen '_corregido_{metodo_correccion}' en el nombre del archivo.")
         print("Las ideas clave extraídas se guardan como '_ideas_clave.json' en la misma carpeta.")
         print("Para cada archivo JSON de ideas clave, se genera un archivo TXT editable.")
-        print("Una vez revisadas, puedes continuar con la generación de contenido multimedia.")
 
         print("\n¡Proceso completado!")
         print(f"Las transcripciones originales se han guardado en: {output_dir}")
         print(f"Las transcripciones corregidas se han guardado en: {corrected_dir}")
+        print("Los videos generados se encuentran en:")
+        print("- output_videos/shorts/: Videos cortos con imágenes estáticas para redes sociales")
+        print("- output_videos/long/: Videos completos con subtítulos")
 
     except Exception as e:
         print(f"Error en la ejecución del programa: {str(e)}")
