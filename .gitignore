@@ -16,3 +16,8 @@ venv/
 
 # Archivos de salida generados
 output_transcriptions/
+
+# Carpetas de sermones generados
+sermons/*/
+output_images/
+*.log

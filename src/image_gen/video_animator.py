@@ -188,26 +188,55 @@ class VideoAnimator:
             name, ext = os.path.splitext(basename)
             output_path = os.path.join(os.path.dirname(video_path), f"{name}_with_logos{ext}")
         
-        # Calcular posiciones para los logos (esquina inferior derecha, uno al lado del otro)
+        # Obtenemos resolución del video para calcular el tamaño adecuado de los logos
+        probe_cmd = [
+            'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0',
+            video_path
+        ]
+        try:
+            dimensions = subprocess.check_output(probe_cmd).decode('utf-8').strip()
+            video_width, video_height = map(int, dimensions.split('x'))
+            print(f"Resolución del video: {video_width}x{video_height}")
+            
+            # Calculamos el tamaño deseado para los logos (aproximadamente 5% del alto del video)
+            logo_height = int(video_height * 0.05)  # 5% de la altura del video
+            print(f"Altura de logo calculada: {logo_height} píxeles")
+        except Exception as e:
+            print(f"No se pudo determinar la resolución del video: {e}")
+            # Usamos valores predeterminados conservadores
+            logo_height = 40
+            video_width, video_height = 1280, 720
+        
+        # Calculamos posiciones para los logos (esquina inferior derecha, uno al lado del otro)
         filter_complex = ""
         
-        # Redimensionar todos los logos para que tengan una altura de 40 píxeles
+        # Redimensionar todos los logos para que tengan la altura calculada
         scale_filters = []
         overlay_filters = []
         
+        # Espacio entre logos y desde el borde
+        margin = 10  # píxeles
+        
+        # Calculamos posición inicial en la esquina inferior derecha
+        pos_y = f"H-h-{margin}"  # Posición Y: altura del video - altura del logo - margen
+        
         for i, logo_path in enumerate(logos_paths):
-            # Primero escalamos cada logo
-            scale_filters.append(f"[{i+1}:v]scale=-1:40[logo{i}]")
+            # Primero escalamos cada logo manteniendo la proporción
+            scale_filters.append(f"[{i+1}:v]scale=-1:{logo_height}[logo{i}]")
             
-            # Luego posicionamos cada logo
             if i == 0:
                 # El primer logo se posiciona en la esquina inferior derecha
-                overlay_filters.append(f"[0:v][logo{i}]overlay=W-w-10:H-h-10:enable='between(t,0,999999)'[bg{i}]")
+                pos_x = f"W-w-{margin}"  # Posición X: ancho del video - ancho del logo - margen
+                overlay_filters.append(f"[0:v][logo{i}]overlay={pos_x}:{pos_y}:enable='between(t,0,999999)'[bg{i}]")
             else:
                 # Los logos siguientes se posicionan a la izquierda del anterior
-                # Usamos una fórmula para calcular la posición X
-                # W-w-(10+w_prev+10) donde w_prev es el ancho del logo anterior
-                overlay_filters.append(f"[bg{i-1}][logo{i}]overlay=W-w-{30 + 50*i}:H-h-10:enable='between(t,0,999999)'[bg{i}]")
+                # Calculamos un desplazamiento adicional para cada logo
+                # El desplazamiento es: margen + (ancho estimado del logo anterior + margen) * posición
+                # Asumimos que cada logo tiene un ancho aproximado de logo_height*1.5
+                estimated_width = logo_height * 1.5
+                pos_x = f"W-w-{margin + (estimated_width + margin) * i}"
+                overlay_filters.append(f"[bg{i-1}][logo{i}]overlay={pos_x}:{pos_y}:enable='between(t,0,999999)'[bg{i}]")
         
         # Construir el filter_complex completo
         filter_complex = ";".join(scale_filters) + ";" + ";".join(overlay_filters)
@@ -622,4 +651,3 @@ def test_video_animator():
 if __name__ == "__main__":
     # Si se ejecuta este archivo directamente, realizar pruebas
     test_video_animator()
-
