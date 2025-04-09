@@ -176,26 +176,6 @@ def main():
                     print("No se pudo generar la transcripción.")
                     continue
                 
-                try:
-                    # Preparamos contenido para redes sociales solo si existe el archivo de transcripción
-                    if os.path.exists(transcription_path):
-                        social_content = transcriber.prepare_social_media_content(transcription_path)
-                        
-                        # Mostramos un resumen de los resultados
-                        print("\nResumen de contenido generado:")
-                        print(f"- Segmentos para YouTube: {len(social_content['youtube'])}")
-                        print(f"- Clips para Reels: {len(social_content['reels'])}")
-                        print(f"- Clips para TikTok: {len(social_content['tiktok'])}")
-                    else:
-                        print("No se puede generar contenido para redes sociales sin un archivo de transcripción válido.")
-                except Exception as e:
-                    print(f"Error generando contenido para redes sociales: {str(e)}")
-                
-            except Exception as e:
-                print(f"Error procesando {video_filename}: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                continue
 
         print("\nAhora puedes revisar las transcripciones corregidas en la carpeta output_transcriptions/corrected.")
         print(f"Las transcripciones corregidas tienen '_corregido_{metodo_correccion}' en el nombre del archivo.")
