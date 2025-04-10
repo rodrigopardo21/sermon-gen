@@ -1,32 +1,30 @@
 """
-Script Principal para Transcripción y Corrección de Sermones
-Este script demuestra el uso de nuestro sistema de transcripción, corrección automática
-y generación de contenido para redes sociales. Actúa como un punto de entrada que coordina
-todo el proceso de manera organizada y segura.
+Script Principal para Transcripción y Generación de Contenido de Sermones
+Este script coordina el proceso completo de transcripción, corrección,
+extracción de ideas clave y generación de videos, organizando todo en
+una estructura de carpetas para cada sermón.
 """
-
 import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from src.transcription.transcriber import SermonTranscriber
 from src.correction.transcription_corrector import leer_transcripcion, corregir_con_claude, guardar_transcripcion_corregida, corregir_transcripcion_por_segmentos
-# Importamos el nuevo módulo de corrección línea por línea
 from src.correction.transcription_line_corrector import corregir_transcripcion_completa
-# Importamos el nuevo módulo de extracción de ideas clave
 from src.content_gen.key_ideas_extractor import extraer_y_guardar_ideas_clave
-# Importamos el editor de ideas clave
-from src.content_gen.editor_ideas_clave import convertir_json_a_txt
+from src.content_gen.editor_ideas_clave import convertir_json_a_txt, convertir_txt_a_json
+# Importamos el nuevo gestor de proyectos
+from src.management.project_manager import SermonProjectManager
+from src.content_gen.prompt_generator import PromptGenerator
+from src.audio.audio_processor import AudioProcessor
 from anthropic import Anthropic
-
 # Cargamos las variables de entorno para manejar información sensible de manera segura
 load_dotenv()
 
 def main():
     """
-    Función principal que coordina el proceso de transcripción, corrección y generación de contenido.
-    Esta función demuestra el flujo completo del proceso, desde la configuración
-    inicial hasta la generación de contenido para redes sociales.
+    Función principal que coordina el proceso completo de transcripción,
+    corrección, extracción de ideas clave y generación de videos.
     """
     # Configuramos las rutas de los directorios de trabajo
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +36,9 @@ def main():
     os.makedirs(input_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(corrected_dir, exist_ok=True)
+
+    # Inicializamos el gestor de proyectos
+    project_manager = SermonProjectManager(base_dir)
 
     # Determinar qué método de corrección usar (por segmentos o línea por línea)
     metodo_correccion = "linea_por_linea"  # Opciones: "segmentos" o "linea_por_linea"
@@ -73,8 +74,21 @@ def main():
         # Procesamos cada video encontrado
         for video_filename in videos:
             print(f"\nProcesando video: {video_filename}")
+            
+            # Creamos un nuevo proyecto para este video
+            sermón_titulo = os.path.splitext(video_filename)[0]
+            project_metadata = project_manager.create_project_structure(video_filename, sermón_titulo)
+            
+            # Copiamos el archivo de entrada al directorio del proyecto
+            input_path = os.path.join(input_dir, video_filename)
+            project_manager.copy_input_file(input_path, project_metadata)
+            
+            # Actualizamos el estado del proyecto
+            project_manager.update_project_status(project_metadata["project_id"], "transcription_started")
+            
             try:
                 # Realizamos la transcripción
+                print(f"Iniciando transcripción de {video_filename}...")
                 transcription_file = transcriber.process_video(video_filename)
                 
                 # Verificamos que la transcripción se ha generado correctamente
@@ -102,6 +116,29 @@ def main():
                         transcription_path = transcription_file
                         # No tenemos JSON en este caso
                         transcript_json = None
+                    
+                    # Organizamos los archivos de transcripción en el proyecto
+                    transcription_files = {
+                        "txt": transcription_path,
+                        "json": transcript_json if os.path.exists(transcript_json or "") else None
+                    }
+                    project_manager.organize_transcription_files(project_metadata, transcription_files)
+                    
+                    # Comprobamos si hay segmentos de audio y los organizamos
+                    audio_segments = []
+                    audio_base_name = f"{video_name_base}_audio"
+                    for i in range(1, 10):  # Asumimos un máximo de 10 segmentos
+                        segment_path = os.path.join(output_dir, f"{audio_base_name}_segment_{i}.mp3")
+                        if os.path.exists(segment_path):
+                            audio_segments.append(segment_path)
+                    
+                    # También incluimos el archivo de audio WAV principal
+                    wav_path = os.path.join(output_dir, f"{audio_base_name}.wav")
+                    if os.path.exists(wav_path):
+                        audio_segments.append(wav_path)
+                    
+                    if audio_segments:
+                        project_manager.organize_audio_files(project_metadata, audio_segments)
                     
                     if os.path.exists(transcription_path):
                         # Definimos la ruta para la transcripción corregida
@@ -144,6 +181,17 @@ def main():
                                 caracteres_corregido = len(texto_corregido)
 
                         if exito:
+                            # Actualizamos el estado del proyecto
+                            project_manager.update_project_status(
+                                project_metadata["project_id"], 
+                                "correction_completed",
+                                {"corrected_file": corrected_file}
+                            )
+                            
+                            # Organizamos el archivo corregido en el proyecto
+                            corrected_files = {"corrected": corrected_file}
+                            project_manager.organize_transcription_files(project_metadata, corrected_files)
+                            
                             print(f"\nEstadísticas de corrección:")
                             print(f"- Caracteres originales: {caracteres_original}")
                             print(f"- Caracteres corregidos: {caracteres_corregido}")
@@ -159,6 +207,13 @@ def main():
                             )
                             
                             if exito_ideas:
+                                # Actualizamos el estado del proyecto
+                                project_manager.update_project_status(
+                                    project_metadata["project_id"], 
+                                    "key_ideas_extracted",
+                                    {"ideas_file": ruta_ideas}
+                                )
+                                
                                 print(f"Ideas clave extraídas y guardadas en: {ruta_ideas}")
                                 
                                 # Convertir a formato TXT para edición
@@ -166,6 +221,102 @@ def main():
                                 if ruta_txt:
                                     print(f"Se ha creado un archivo de texto editable en: {ruta_txt}")
                                     print("Puedes abrir este archivo, editar las ideas y luego convertirlo de vuelta a JSON.")
+                                    
+                                    # Organizamos los archivos de ideas clave en el proyecto
+                                    ideas_files = {
+                                        "ideas_json": ruta_ideas,
+                                        "ideas_txt": ruta_txt
+                                    }
+                                    project_manager.organize_transcription_files(project_metadata, ideas_files)
+                                    
+                                    # Añadir marcas de tiempo a las ideas clave y crear audio para video corto
+                                    print("\nPreparando audio para video corto...")
+                                    audio_processor = AudioProcessor()
+                                    
+                                    # Añadir marcas de tiempo a las ideas clave
+                                    enriched_json = audio_processor.add_timestamps_to_ideas(
+                                        ruta_ideas,
+                                        transcript_json,
+                                        os.path.join(project_metadata["directories"]["transcription"], f"{Path(base_name).stem}_ideas_clave_with_timestamps.json")
+                                    )
+                                    
+                                    if enriched_json:
+                                        # Crear audio para el video corto
+                                        audio_for_short = audio_processor.extract_audio_for_key_ideas(
+                                            enriched_json,
+                                            os.path.join(project_metadata["directories"]["audio"], f"{video_name_base}_audio.wav"),
+                                            os.path.join(project_metadata["directories"]["audio"], f"{video_name_base}_ideas_clave.wav")
+                                        )
+                                        
+                                        # Generar archivo de subtítulos SRT para el video corto
+                                        subtitles_path = audio_processor.generate_subtitle_file(
+                                            enriched_json,
+                                            os.path.join(project_metadata["directories"]["transcription"], f"{Path(base_name).stem}_ideas_clave_subtitles.srt"),
+                                            "srt"
+                                        )
+                                        
+                                        # Generar prompts para nim.video
+                                        print("\nGenerando prompts para nim.video...")
+                                        prompt_generator = PromptGenerator()
+                                        
+                                        # Obtener duraciones de audio
+                                        audio_completo_path = os.path.join(project_metadata["directories"]["audio"], f"{video_name_base}_audio.wav")
+                                        duracion_audio_completo = "00:30:00"  # Valor predeterminado
+                                        
+                                        # Intentar obtener la duración real del audio completo
+                                        duracion_segundos = audio_processor.get_audio_duration(audio_completo_path)
+                                        if duracion_segundos:
+                                            duracion_audio_completo = audio_processor.format_duration(duracion_segundos)
+                                        
+                                        # Duración del audio de ideas clave
+                                        duracion_audio_ideas = "00:01:10"  # Valor predeterminado
+                                        
+                                        # Si existe el archivo de audio para ideas clave, obtener su duración
+                                        if audio_for_short and os.path.exists(audio_for_short):
+                                            duracion_segundos = audio_processor.get_audio_duration(audio_for_short)
+                                            if duracion_segundos:
+                                                duracion_audio_ideas = audio_processor.format_duration(duracion_segundos)
+                                        
+                                        print(f"Duración del audio completo: {duracion_audio_completo}")
+                                        print(f"Duración del audio de ideas clave: {duracion_audio_ideas}")
+                                        
+                                        prompt_corto, prompt_largo, temas = prompt_generator.generar_prompts_para_sermon(
+                                            ruta_ideas,
+                                            sermón_titulo,
+                                            duracion_audio_completo,
+                                            duracion_audio_ideas
+                                        )
+                                        
+                                        # Guardar los prompts en el directorio del proyecto
+                                        proyecto_dir = project_metadata["directories"]["project"]
+                                        ruta_prompt_corto, ruta_prompt_largo = prompt_generator.guardar_prompts(
+                                            proyecto_dir, prompt_corto, prompt_largo
+                                        )
+                                        
+                                        if ruta_prompt_corto and ruta_prompt_largo:
+                                            print(f"Prompts para nim.video guardados en el directorio del proyecto:")
+                                            print(f"- Video corto (reel/short): {os.path.basename(ruta_prompt_corto)}")
+                                            print(f"- Video largo (sermón completo): {os.path.basename(ruta_prompt_largo)}")
+                                            print("Puedes copiar y pegar estos prompts en nim.video para generar tus videos.")
+                                            
+                                            # Actualizar el estado del proyecto
+                                            project_manager.update_project_status(
+                                                project_metadata["project_id"],
+                                                "prompts_generated",
+                                                {
+                                                    "prompts": {
+                                                        "video_corto": ruta_prompt_corto,
+                                                        "video_largo": ruta_prompt_largo,
+                                                        "temas_detectados": temas
+                                                    },
+                                                    "audio_ideas_clave": audio_for_short,
+                                                    "subtitulos_ideas_clave": subtitles_path
+                                                }
+                                            )
+                                        else:
+                                            print("No se pudieron generar los prompts para nim.video.")
+                                    else:
+                                        print("No se pudieron añadir marcas de tiempo a las ideas clave.")
                             else:
                                 print("No se pudieron extraer las ideas clave. Continuando con el resto del proceso.")
                         else:
@@ -176,6 +327,24 @@ def main():
                     print("No se pudo generar la transcripción.")
                     continue
                 
+                # Actualizamos el estado final del proyecto
+                project_manager.update_project_status(
+                    project_metadata["project_id"], 
+                    "processing_completed",
+                    {"status_message": "Transcripción, corrección e ideas clave completadas"}
+                )
+                
+            except Exception as e:
+                print(f"Error procesando {video_filename}: {str(e)}")
+                # Registramos el error en el proyecto
+                project_manager.update_project_status(
+                    project_metadata["project_id"], 
+                    "error",
+                    {"error_message": str(e)}
+                )
+                import traceback
+                traceback.print_exc()
+                continue
 
         print("\nAhora puedes revisar las transcripciones corregidas en la carpeta output_transcriptions/corrected.")
         print(f"Las transcripciones corregidas tienen '_corregido_{metodo_correccion}' en el nombre del archivo.")
@@ -184,8 +353,11 @@ def main():
         print("Una vez revisadas, puedes continuar con la generación de contenido multimedia.")
 
         print("\n¡Proceso completado!")
-        print(f"Las transcripciones originales se han guardado en: {output_dir}")
-        print(f"Las transcripciones corregidas se han guardado en: {corrected_dir}")
+        print("Cada sermón procesado ha sido organizado en su propia carpeta dentro de sermon_projects/")
+        print("Proyectos procesados:")
+        for project in project_manager.list_projects():
+            status_icon = "✅" if project["status"] == "processing_completed" else "❌"
+            print(f"{status_icon} {project['sermon_title']} (ID: {project['project_id']})")
 
     except Exception as e:
         print(f"Error en la ejecución del programa: {str(e)}")
