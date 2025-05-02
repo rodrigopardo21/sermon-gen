@@ -1,3 +1,11 @@
+# AVISO: ESTE REPOSITORIO NO ESTÁ OPERATIVO
+
+**⚠️ IMPORTANTE: Este proyecto ha sido sustituido por [NuevoPactoStudio](https://github.com/rodrigopardo21/NuevoPactoStudio) ⚠️**
+
+El desarrollo activo ha sido trasladado a NuevoPactoStudio, que ofrece características mejoradas para el recorte de videos y la transcripción de sermones utilizando la API de AssemblyAI.
+
+---
+
 # Sistema de Transcripción y Corrección de Sermones con IA
 
 Un sistema automatizado para la transcripción y corrección de sermones utilizando tecnologías de IA.
@@ -16,15 +24,14 @@ Un sistema automatizado para la transcripción y corrección de sermones utiliza
 - Procesamiento de video y audio
 - Control de versiones con Git
 
-## Instalación
+## Proyecto de reemplazo: NuevoPactoStudio
 
-1. Clonar el repositorio
-2. Crear un entorno virtual: `python -m venv venv`
-3. Activar el entorno: `source venv/bin/activate` (Linux/Mac) o `venv\Scripts\activate` (Windows)
-4. Instalar dependencias: `pip install -r requirements.txt`
-5. Configurar variables de entorno en un archivo `.env` (ver `.env.example`)
+El nuevo proyecto [NuevoPactoStudio](https://github.com/rodrigopardo21/NuevoPactoStudio) ofrece:
 
-## Uso
+- Recorte de videos con interfaz interactiva
+- Transcripción automática mediante AssemblyAI
+- Generación de subtítulos SRT con sincronización precisa a nivel de palabra
+- Organización automática de archivos por fecha
+- Múltiples formatos de salida (JSON, TXT, SRT)
 
-```bash
-python main.py --input video.mp4
+Por favor, utilice el nuevo repositorio para todas las nuevas contribuciones e issues.
